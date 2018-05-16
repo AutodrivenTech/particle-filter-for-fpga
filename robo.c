@@ -224,7 +224,7 @@ int main()
 		MCL_process(lidar_ranges, lidar_angles, World_map, rand_x, rand_y, rand_angle, score, &max_score_loop, split_number, &max_score_pos, &max_S, &Est_x_pose, &Est_y_pose, &Est_angle_pose, &Est_match_rate, test_array, &my_rand_number_seed);
 		printf("Estimate %d times pose are:  \n x = %d \n y = %d \n angle = %f\n match_rate = %f \n", loop_time, Est_x_pose, Est_y_pose, Est_angle_pose, Est_match_rate);
 		loop_time++;
-		printf("rand test_number is %d  %d  %d  %d\n", test_array[0], test_array[1], test_array[2], test_array[3]);
+//		printf("rand test_number is %d  %d  %d  %d\n", test_array[0], test_array[1], test_array[2], test_array[3]);
 		if (Est_match_rate > MATCH_THR)
 		{
 			run_MCL_fun = 0;
@@ -233,9 +233,8 @@ int main()
 		else
 		{
 			my_time(&my_rand_number_seed);		//将时间种子赋给my_rand_number_seed
-			printf("rand time seed is %d\n", my_rand_number_seed);
+//			printf("rand time seed is %d\n", my_rand_number_seed);
 			MCL_important_sample(&max_score_loop, split_number, &max_score_pos, &max_S, rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle, &my_rand_number_seed);
-			printf("finish important sample\n");
 		}
 	}
 
@@ -404,7 +403,8 @@ void process_lidar_file(float lidar_r[LIDAR_FILE_READ_LINE][Origin_lidar_number]
 
 void MCL_prepare(float rand_angles_gather[particle_angle_num], short rand_x_gather[MATRIX_MAP_X], short rand_y_gather[MATRIX_MAP_Y], short rand_x[P_NUMBER], short rand_y[P_NUMBER], float rand_angle[P_NUMBER], unsigned long *rand_seed)
 {
-	unsigned long function_rand_number = *rand_seed;
+	unsigned long function_rand_number;
+	function_rand_number = *rand_seed;
 	for (i = 0; i < particle_angle_num; i++)
 	{
 		rand_angles_gather[i] = i * angle_resol;
@@ -485,7 +485,7 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 	short rand_x_store;
 	short rand_y_store;
 
-	unsigned long function_rand_number = *rand_seed;		//得到时间种子
+//	unsigned long function_rand_number = *rand_seed;		//得到时间种子
 
 															//将打分系统清零
 															//*********LOOP1
@@ -587,12 +587,12 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 
 	*max_S = round(max_score * P_NUMBER / sum_score);
 
-	my_rand(&function_rand_number);
-	test_array[0] = function_rand_number;
-	test_array[1] = function_rand_number % (2 * p_move_range);
-	test_array[2] = ceil(-p_move_range + test_array[1]);
-	test_array[3] = ceil(-p_move_range + test_array[1]);
-	process_rand_num(&test_array[3], -p_move_range, p_move_range);
+//	my_rand(&function_rand_number);
+//	test_array[0] = function_rand_number;
+//	test_array[1] = function_rand_number % (2 * p_move_range);
+//	test_array[2] = ceil(-p_move_range + test_array[1]);
+//	test_array[3] = ceil(-p_move_range + test_array[1]);
+//	process_rand_num(&test_array[3], -p_move_range, p_move_range);
 
 	//计算匹配度，并与阈值比较
 	*Est_angle_pose = rand_angle_max;
@@ -653,10 +653,22 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 		//随机数给rand_x,y,angle赋值
 		for (i = 0; i < P_NUMBER; i++)
 		{
+#pragma HLS loop_tripcount min=10 max=2000		//指明循坏次数的最大值和最小值
+#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
 			my_rand(&function_rand_number);
 			rand_x[i] = rand_x_gather[function_rand_number % MATRIX_MAP_X];
+		}
+		for (i = 0; i < P_NUMBER; i++)
+		{
+#pragma HLS loop_tripcount min=10 max=2000		//指明循坏次数的最大值和最小值
+#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
 			my_rand(&function_rand_number);
 			rand_y[i] = rand_y_gather[function_rand_number % MATRIX_MAP_Y];
+		}
+		for (i = 0; i < P_NUMBER; i++)
+		{
+#pragma HLS loop_tripcount min=10 max=2000		//指明循坏次数的最大值和最小值
+#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
 			my_rand(&function_rand_number);
 			rand_angle[i] = rand_angles_gather[function_rand_number % particle_angle_num];
 		}
