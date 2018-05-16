@@ -2,17 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-
-#ifdef SDX_USE
-	#include "sds_lib.h"
-#endif
-
+//#ifdef SDX_USE
+#include "sds_lib.h"
+//#endif
 
 //#pragma SDS data mem_attribute(World_map:PHYSICAL_CONTIGUOUS)
 //#pragma SDS data zero_copy(World_map[0:MATRIX_MAP_Y*MATRIX_MAP_X])
 //#pragma SDS data data_mover(World_map:AXIDMA_SIMPLE)
 
-#define SDX_USE
+//#define SDX_USE
 #define MAX_LINE 10538		//文件中一共16826行数据
 #define LINE_DATA 10		//一行缓冲字符数目
 #define MATRIX_MAP_Y 500		//原始地图矩阵
@@ -127,7 +125,6 @@ short last_max_score = 0;	//上一次的最高分
 int test_number_1;
 short test_number_2,test_number_3,test_number_4;
 
-
 //%----------------------------------------------------------------------------------------------
 //%代码功能：读取文件中的x, y数据，构建全局地图。注意：由于我的地图中大于3的数据时不重要的散点，我做了删除此散点
 //%工作以缩小栅格地图大小。接下来读取x, y的极值，除以地图分辨率得到地图大小，在对数据逐一判断，既可以得到
@@ -149,6 +146,8 @@ int main()
 	//雷达的数据，由函数得到
 	float lidar_angles[lidar_number];
 	float lidar_ranges[lidar_number];
+//	float *lidar_angles = (float *)sds_alloc(lidar_number*sizeof(float));
+//	float *lidar_ranges = (float *)sds_alloc(lidar_number*sizeof(float));
 
 	//最终的位置初始化
 	int Est_x_pose = 0;
@@ -163,27 +162,26 @@ int main()
 	short rand_x_gather[MATRIX_MAP_X] = { 0 };				//随机X坐标集合
 	short rand_y_gather[MATRIX_MAP_Y] = { 0 };				//随机Y坐标集合
 
-
-#ifdef SDX_USE
+//#ifdef SDX_USE
 	short *rand_x = (short *)sds_alloc(P_NUMBER * sizeof(short));
 	short *rand_y = (short *)sds_alloc(P_NUMBER * sizeof(short));
 	float *rand_angle = (float *)sds_alloc(P_NUMBER * sizeof(float));
 	short *score = (short *)sds_alloc(P_NUMBER * sizeof(short));
 	short *split_number = (short *)sds_alloc(P_NUMBER * sizeof(short));
 	char *World_map = (char *)sds_alloc(MATRIX_MAP_Y*MATRIX_MAP_X * sizeof(char));
-#else
-	short rand_x[P_NUMBER];							//处理随机数后得到的粒子X坐标
-	short rand_y[P_NUMBER];
-	float rand_angle[P_NUMBER];
-	short score[P_NUMBER] = { 0 };				//每个粒子的得分，即匹配度
-	short split_number[P_NUMBER] = { 0 };		//权值对应分裂的个数
-	char World_map[MATRIX_MAP_Y][MATRIX_MAP_X] = { 0 };			//全局地图矩阵
-#endif
-
+//#else
+//	short rand_x[P_NUMBER];							//处理随机数后得到的粒子X坐标
+//	short rand_y[P_NUMBER];
+//	float rand_angle[P_NUMBER];
+//	short score[P_NUMBER] = { 0 };				//每个粒子的得分，即匹配度
+//	short split_number[P_NUMBER] = { 0 };		//权值对应分裂的个数
+//	char World_map[MATRIX_MAP_Y][MATRIX_MAP_X] = { 0 };			//全局地图矩阵
+//#endif
 
 	char max_score_loop = 1;    //同一个最大值循环次数，超过阈值则重新撒粒子
 	int max_score_pos = 0;	//最高得分在粒子数组中的位置
 	int max_S;				//由权值来计算分裂数，这是最大分裂数
+
 							//
 	char run_MCL_fun = 1;		//循环驱动
 
@@ -206,8 +204,9 @@ int main()
 	while (run_MCL_fun)
 	{
 		MCL_process(lidar_ranges, lidar_angles, World_map, rand_x, rand_y, rand_angle, score, &max_score_loop, split_number, &max_score_pos, &max_S, &Est_x_pose, &Est_y_pose, &Est_angle_pose, &Est_match_rate);
-		printf("Estimate %d times pose are:  \n x = %d  y = %d  angle = %f  match_rate = %f \n", loop_time, Est_x_pose, Est_y_pose, Est_angle_pose, Est_match_rate);
+		printf("Estimate %d times pose are:  \n x = %d \n y = %d \n angle = %f\n match_rate = %f \n", loop_time, Est_x_pose, Est_y_pose, Est_angle_pose, Est_match_rate);
 		loop_time++;
+		printf("rand test_number is %d  %d  %d  %d\n", test_number_1,test_number_2,test_number_3,test_number_4);
 		if (Est_match_rate > MATCH_THR)
 		{
 			run_MCL_fun = 0;
@@ -218,31 +217,26 @@ int main()
 			my_time();
 			printf("rand time seed is %d\n", rand_seed);
 			MCL_important_sample(&max_score_loop, split_number, &max_score_pos, &max_S, rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle);
-
-			for (i = 0; i < 5; i++)
-			{
-				printf("data %d is \n rand_x_y_angle is %d  %d  %f\n\n ", i, rand_x[i], rand_y[i], rand_angle[i]);
-			}
-			printf("rand test_number is %d  %d  %d  %d\n", test_number_1,test_number_2,test_number_3,test_number_4);
+			printf("finish important sample\n");
 		}
 	}
 
-	//	char find_times = 0;
-	//	for (find_times = 0; find_times < 10; find_times ++)
-	//	{
-	//		#pragma HLS loop_tripcount min=1 max=10		//指明循坏次数的最大值和最小值
-	//		MCL_process(lidar_ranges, lidar_angles, World_map, rand_x, rand_y, rand_angle, score, &max_score_loop, split_number, &max_score_pos, &max_S, &Est_x_pose, &Est_y_pose, &Est_angle_pose, &Est_match_rate);
-	//		if (Est_match_rate > MATCH_THR)
-	//		{
-	//			break;
-	//		}
-	//		//如果匹配点最多没有到达阈值，则重采样
-	//		else
-	//		{
-	//			my_time();
-	//			MCL_important_sample(&max_score_loop, split_number, &max_score_pos, &max_S, rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle);
-	//		}
-	//	}
+//	char find_times = 0;
+//	for (find_times = 0; find_times < 10; find_times ++)
+//	{
+//		#pragma HLS loop_tripcount min=1 max=10		//指明循坏次数的最大值和最小值
+//		MCL_process(lidar_ranges, lidar_angles, World_map, rand_x, rand_y, rand_angle, score, &max_score_loop, split_number, &max_score_pos, &max_S, &Est_x_pose, &Est_y_pose, &Est_angle_pose, &Est_match_rate);
+//		if (Est_match_rate > MATCH_THR)
+//		{
+//			break;
+//		}
+//		//如果匹配点最多没有到达阈值，则重采样
+//		else
+//		{
+//			my_time();
+//			MCL_important_sample(&max_score_loop, split_number, &max_score_pos, &max_S, rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle);
+//		}
+//	}
 
 
 
@@ -252,7 +246,7 @@ int main()
 
 	//从键盘得到输入，用于保留终端输出框
 	getchar();
-#pragma  message("final")
+	#pragma  message("final")
 	return 0;
 }
 
@@ -453,11 +447,11 @@ void read_map_file(float world_data_x[MAX_LINE], float world_data_y[MAX_LINE])
 void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_number], char World_map[MATRIX_MAP_Y][MATRIX_MAP_X], short rand_x[P_NUMBER], short rand_y[P_NUMBER], float rand_angle[P_NUMBER], short score[P_NUMBER], char *max_score_loop, short split_number[P_NUMBER], int *max_score_pos, int *max_S, int *Est_x_pose, int *Est_y_pose, float *Est_angle_pose, float *Est_match_rate)
 {
 
-	//	#pragma HLS allocation instances=select limit=512 operation		//限制select表达式最多512个
-	//	#pragma HLS allocation instances=add limit=256 operation		//
-	//	#pragma HLS allocation instances=icmp limit=256 operation		//
-	//	#pragma HLS allocation instances=or limit=128 operation		//
-	//	#pragma HLS ALLOCATION instances=mul limit=200 operation
+//	#pragma HLS allocation instances=select limit=512 operation		//限制select表达式最多512个
+//	#pragma HLS allocation instances=add limit=256 operation		//
+//	#pragma HLS allocation instances=icmp limit=256 operation		//
+//	#pragma HLS allocation instances=or limit=128 operation		//
+//	#pragma HLS ALLOCATION instances=mul limit=200 operation
 	float angle, range;			//临时变量，用于计算occ_x,occ_y
 	int occ_x, occ_y;			//局部地图以粒子位置为机器人位置，得到的x,y值，后续将判断地图上此点是否存在，存在则加1分
 	int rand_x_max;				////储存最大得分的位置信息
@@ -475,9 +469,9 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 	//*********LOOP1
 	for (i = 0; i < P_NUMBER; i++)
 	{
-#pragma HLS loop_tripcount min=100000 max=200000		//指明循坏次数的最大值和最小值
+		#pragma HLS loop_tripcount min=100000 max=200000		//指明循坏次数的最大值和最小值
 		//#pragma HLS unroll factor=50
-#pragma HLS pipeline II=1
+		#pragma HLS pipeline II=1
 		score[i] = 0;
 	}
 
@@ -485,7 +479,7 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 	//*********LOOP2
 	for (i = 0; i < P_NUMBER; i++)
 	{
-#pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值
+		#pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值
 		//对每个粒子进行打分，如果局部地图的点转换后在全局地图中也有，则加一分
 		////*******************这个地方可以加pipeline吗？
 		rand_angle_store = rand_angle[i];		//储存循环中需要的值避免重复读取数据
@@ -495,21 +489,21 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 		//*********LOOP2.1
 		for (j = 0; j < lidar_number; j++)
 		{
-#pragma HLS loop_tripcount min=360 max=2000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
-			//			#pragma HLS unroll factor=5			//在这里小小的用一下unroll,以满足时序要求
-			//			#pragma HLS dependence variable=score intra false		//由于score的存在，需要给个提示
+			#pragma HLS loop_tripcount min=360 max=2000		//指明循坏次数的最大值和最小值
+			#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
+//			#pragma HLS unroll factor=5			//在这里小小的用一下unroll,以满足时序要求
+//			#pragma HLS dependence variable=score intra false		//由于score的存在，需要给个提示
 
 			////对于每个粒子，将局 部扫描地图带入，得到该局部地图在全局地图中对应的坐标。这里其实是一个坐标转换工作
-			//			#pragma HLS RESOURCE variable=angle core=FAddSub
+//			#pragma HLS RESOURCE variable=angle core=FAddSub
 
 			angle = lidar_angles[j] + rand_angle_store;
 			range = lidar_ranges[j];
 			occ_x = ceil(range*cos(angle) / map_resol + rand_x_store);
 			occ_y = ceil(range*sin(angle) / map_resol + rand_y_store);
 
-			//			#pragma HLS RESOURCE variable=occ_y core=Cmp
-			//			#pragma HLS RESOURCE variable=occ_x core=Cmp
+//			#pragma HLS RESOURCE variable=occ_y core=Cmp
+//			#pragma HLS RESOURCE variable=occ_x core=Cmp
 			if (occ_y < MATRIX_MAP_Y && occ_x < MATRIX_MAP_X && occ_x >= 0 && occ_y >= 0)
 			{
 				if (World_map[occ_y][occ_x] == 1)
@@ -527,13 +521,13 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 	max_score = 0;		//计算最高得分
 	*max_score_pos = 0;	//最高得分在粒子数组中的位置
 						//计算总得分，及最大分数，最大分数的位置
-						//*********LOOP3
+	//*********LOOP3
 	for (i = 0; i < P_NUMBER; i++)
 	{
-#pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值,没啥用
-		//		#pragma HLS unroll factor=50
-#pragma HLS pipeline II = 1					//此循环内执行流水线操作
-		//		#pragma HLS dependence variable=sum_score intra false		//由于sum_score的存在，需要给个提示
+		#pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值,没啥用
+//		#pragma HLS unroll factor=50
+		#pragma HLS pipeline II = 1					//此循环内执行流水线操作
+//		#pragma HLS dependence variable=sum_score intra false		//由于sum_score的存在，需要给个提示
 
 		sum_score = sum_score + score[i];
 		if (score[i] > max_score)
@@ -560,23 +554,23 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 		last_max_score = max_score;
 	}
 
+	//根据得分和总分算出权值对应分裂的个数
+	//*********LOOP4
+	for (i = 0; i < P_NUMBER; i++)
+	{
+		#pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值
+//		#pragma HLS unroll factor=50
+		#pragma HLS pipeline II=1						//此循环内执行流水线操作
+		split_number[i] = round((score[i] * P_NUMBER) / (sum_score*1.0));
+	}
+
+	*max_S = round(max_score * P_NUMBER / sum_score);
+
 	test_number_1 = my_rand();
 	test_number_2 = my_rand()%(2 * p_move_range);
 	test_number_3 = ceil(-p_move_range + test_number_2);
 	test_number_4 = ceil(-p_move_range + test_number_2);
 	process_rand_num(&test_number_4, -p_move_range, p_move_range);
-
-	//根据得分和总分算出权值对应分裂的个数
-	//*********LOOP4
-	for (i = 0; i < P_NUMBER; i++)
-	{
-#pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值
-		//		#pragma HLS unroll factor=50
-#pragma HLS pipeline II=1						//此循环内执行流水线操作
-		split_number[i] = round((score[i] * P_NUMBER) / (sum_score*1.0));
-	}
-
-	*max_S = round(max_score * P_NUMBER / sum_score);
 
 	//计算匹配度，并与阈值比较
 	*Est_angle_pose = rand_angle_max;
@@ -596,8 +590,8 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 	//	#pragma HLS allocation instances=icmp limit=256 operation		//
 	//	#pragma HLS allocation instances=or limit=128 operation		//
 	//	#pragma HLS ALLOCATION instances=mul limit=200 operation
-//	#pragma HLS allocation instances=process_rand_num limit=10 function
-//	#pragma HLS allocation instances=my_rand limit=10 function
+	#pragma HLS allocation instances=process_rand_num limit=10 function
+	#pragma HLS allocation instances=my_rand limit=10 function
 
 	int P_num;								//P_num用于给所有粒子赋值的驱动变量
 	short rand_num_1, rand_num_2, rand_num_3, rand_num_temp;				//随机数，用于在随机数组里取数值
