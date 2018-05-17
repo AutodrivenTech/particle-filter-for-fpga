@@ -17,6 +17,7 @@
 #define lidar_number  360		//原始激光雷达角度数据
 #define particle_angle_num  311		//粒子角度信息随机个数
 #define P_NUMBER  30000//粒子数
+#define P_PART  4//粒子数分割成几分份
 #define MATCH_THR 0.7			//匹配度阈值，360*MATCH_THR
 #define LIDAR_FILE_READ_LINE  10
 #define map_resol 0.02
@@ -32,12 +33,15 @@ void my_time(unsigned long *rand_seed)
 	*rand_seed = (unsigned)(time(NULL));
 }
 
-////产生随机数的主要函数
-//static long my_do_rand(unsigned long *value)
-//{
-//	/*这个算法保证所产生的值不会超过(2^31 - 1)这里(2^31 - 1)就是 0x7FFFFFFF。而 0x7FFFFFFF
-//	等于127773 * (7^5) + 2836,7^5 = 16807。整个算法是通过：t = (7^5 * t) mod (2^31 - 1)这个公式来计算随机值，并且把这次得到的值，作为下次计算的随机种子值。
-//	*/
+
+//产生随机数的主要函数
+void my_rand(unsigned long *value)
+{
+#pragma HLS INLINE
+	/*这个算法保证所产生的值不会超过(2^31 - 1)这里(2^31 - 1)就是 0x7FFFFFFF。而 0x7FFFFFFF
+	等于127773 * (7^5) + 2836,7^5 = 16807。整个算法是通过：t = (7^5 * t) mod (2^31 - 1)这个公式来计算随机值，并且把这次得到的值，作为下次计算的随机种子值。
+	线性同余法，适合嵌入式，占资源少，循环周期为能产生的随机数最大值，在这里为(2^31 - 1)
+	*/
 //	long quotient, remainder, t;
 //
 //	quotient = *value / 127773L;
@@ -46,41 +50,26 @@ void my_time(unsigned long *rand_seed)
 //
 //	if (t <= 0)
 //		t += 0x7FFFFFFFL;
-//	return ((*value = t) % ((unsigned long)RANDOM_MAX + 1));
-//}
+//	*value = (t % ((unsigned long)RANDOM_MAX + 1));
 
-
+//	//16位 LSFR 随机数
+//	long bit, lfsr;
 //
-//static unsigned long next = 1;
+//	lfsr = *value;
+//	bit = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1;
+//	lfsr = (lfsr >> 1) | (bit << 15);
+//
+//	*value = lfsr;
 
-//返回随机数
-//int my_rand(void)
-//{
-//	return my_do_rand(&next);
-//}
-
-//产生随机数的主要函数
-void my_rand(unsigned long *value)
-{
-	/*这个算法保证所产生的值不会超过(2^31 - 1)这里(2^31 - 1)就是 0x7FFFFFFF。而 0x7FFFFFFF
-	等于127773 * (7^5) + 2836,7^5 = 16807。整个算法是通过：t = (7^5 * t) mod (2^31 - 1)这个公式来计算随机值，并且把这次得到的值，作为下次计算的随机种子值。
-	*/
-	long quotient, remainder, t;
-
-	quotient = *value / 127773L;
-	remainder = *value % 127773L;
-	t = 16807L * remainder - 2836L * quotient;
-
-	if (t <= 0)
-		t += 0x7FFFFFFFL;
-	*value = (t % ((unsigned long)RANDOM_MAX + 1));
+	//64位随机数生成
+	unsigned long x;
+	 x = *value;	/* The state must be seeded with a nonzero value. */
+	x ^= x >> 12; // a
+	x ^= x << 25; // b
+	x ^= x >> 27; // c
+	*value = x;
 }
 
-//重置时间种子
-//void my_srand(void)
-//{
-//	next = rand_seed;
-//}
 
 
 //读局部激光雷达数据，返回ranges和angles
@@ -90,9 +79,9 @@ void my_rand(unsigned long *value)
 //void my_MCL_particleLocalization(float *lidar_ranges, float *lidar_angles, int World_map[MATRIX_MAP_Y][MATRIX_MAP_X], int *x_pose, int *y_pose, float *angle_pose, float *match_rate);
 
 //数组大小都不超过1000，使用连续内存来分配，并且使用AXIDMA_SIMPLE来传递数据；大的数组使用AXIDMA_SG
-//#pragma SDS data zero_copy(rand_angles_gather[0:particle_angle_num], rand_x_gather[0:MATRIX_MAP_X], rand_y_gather[0:MATRIX_MAP_Y], rand_x[0:P_NUMBER], rand_y[0:P_NUMBER], rand_angle[0:P_NUMBER])
-//#pragma SDS data mem_attribute(rand_angles_gather:PHYSICAL_CONTIGUOUS, rand_x_gather:PHYSICAL_CONTIGUOUS, rand_y_gather:PHYSICAL_CONTIGUOUS)
-//#pragma SDS data data_mover(rand_angles_gather:AXIDMA_SIMPLE:1, rand_x_gather:AXIDMA_SIMPLE:2, rand_y_gather:AXIDMA_SIMPLE:3, rand_x:AXIDMA_SG:1, rand_y:AXIDMA_SG:2, rand_angle:AXIDMA_SG:3)
+#pragma SDS data zero_copy(rand_x[0:P_NUMBER], rand_y[0:P_NUMBER], rand_angle[0:P_NUMBER])
+#pragma SDS data mem_attribute(rand_x:PHYSICAL_CONTIGUOUS, rand_y:PHYSICAL_CONTIGUOUS, rand_angle:PHYSICAL_CONTIGUOUS)
+#pragma SDS data data_mover(rand_x:AXIDMA_SG, rand_y:AXIDMA_SG, rand_angle:AXIDMA_SG)
 void MCL_prepare(float rand_angles_gather[particle_angle_num], short rand_x_gather[MATRIX_MAP_X], short rand_y_gather[MATRIX_MAP_Y], short rand_x[P_NUMBER], short rand_y[P_NUMBER], float rand_angle[P_NUMBER], unsigned long *rand_seed);
 
 
@@ -202,6 +191,23 @@ int main()
 
 	unsigned long my_rand_number_seed = 1;
 
+	//给rand_x_gather，rand_y_gather，rand_angles_gather赋值
+	for (i = 0; i < particle_angle_num; i++)
+	{
+		rand_angles_gather[i] = i * angle_resol;
+	}
+	//创建x坐标矩阵，用于随机数挑选
+	for (i = 0; i < MATRIX_MAP_X; i++)
+	{
+		rand_x_gather[i] = i + 1;
+	}
+	//创建y坐标矩阵，用于随机数挑选
+	for (i = 0; i < MATRIX_MAP_Y; i++)
+	{
+		rand_y_gather[i] = i + 1;
+	}
+
+
 	read_map_file(world_data_x, world_data_y);
 	process_worldmap(world_data_x, world_data_y, World_map);
 
@@ -215,7 +221,6 @@ int main()
 
 
 	my_time(&my_rand_number_seed);		//将时间种子赋给my_rand_number_seed
-
 	MCL_prepare(rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle, &my_rand_number_seed);
 
 	while (run_MCL_fun)
@@ -405,34 +410,75 @@ void MCL_prepare(float rand_angles_gather[particle_angle_num], short rand_x_gath
 {
 	unsigned long function_rand_number;
 	function_rand_number = *rand_seed;
-	for (i = 0; i < particle_angle_num; i++)
-	{
-		rand_angles_gather[i] = i * angle_resol;
-	}
-	//创建x坐标矩阵，用于随机数挑选
-	for (i = 0; i < MATRIX_MAP_X; i++)
-	{
-		rand_x_gather[i] = i + 1;
-	}
-	//创建y坐标矩阵，用于随机数挑选
-	for (i = 0; i < MATRIX_MAP_Y; i++)
-	{
-		rand_y_gather[i] = i + 1;
-	}
+
+
+//	short function_rand_x[P_NUMBER];
+//	short function_rand_y[P_NUMBER];
+//	float function_rand_angle[P_NUMBER];
+//
+//	for (i = 0; i < P_NUMBER; i++)
+//	{
+//#pragma HLS loop_tripcount min=10 max=30000		//指明循坏次数的最大值和最小值
+//#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
+//#pragma HLS array_partition variable=function_rand_x block factor=4
+//#pragma HLS array_partition variable=function_rand_y block factor=4
+//#pragma HLS array_partition variable=function_rand_angle block factor=4
+//
+//		my_rand(&function_rand_number);
+//		function_rand_x[i] = rand_x_gather[function_rand_number % MATRIX_MAP_X];
+//		my_rand(&function_rand_number);
+//		function_rand_y[i] = rand_y_gather[function_rand_number % MATRIX_MAP_Y];
+//		my_rand(&function_rand_number);
+//		function_rand_angle[i] = rand_angles_gather[function_rand_number % particle_angle_num];
+//	}
+
+//	for (i = 0; i < P_NUMBER; i++)
+//	{
+//#pragma HLS loop_tripcount min=10 max=30000		//指明循坏次数的最大值和最小值
+//#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
+//#pragma HLS array_partition variable=function_rand_x block factor=4
+//#pragma HLS array_partition variable=function_rand_y block factor=4
+//#pragma HLS array_partition variable=function_rand_angle block factor=4
+//
+//		rand_x[i] = function_rand_x[i];
+//		rand_y[i] = function_rand_y[i];
+//		rand_angle[i] = function_rand_angle[i];
+//	}
 
 	//随机数给rand_x,y,angle赋值
 	//-------------------数组占用内存太大，后续需处理------------------------
 	/*srand((unsigned)time(NULL));*/
+	int i = 0;
 	for (i = 0; i < P_NUMBER; i++)
 	{
+#pragma HLS loop_tripcount min=10 max=30000		//指明循坏次数的最大值和最小值
+#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
+
 		my_rand(&function_rand_number);
 		rand_x[i] = rand_x_gather[function_rand_number % MATRIX_MAP_X];
 		my_rand(&function_rand_number);
 		rand_y[i] = rand_y_gather[function_rand_number % MATRIX_MAP_Y];
 		my_rand(&function_rand_number);
 		rand_angle[i] = rand_angles_gather[function_rand_number % particle_angle_num];
-		//printf("Random numbers are: %d	%d	%d\n", rand_x[i], rand_y[i] , rand_angle[i]);
 	}
+
+//	for (i = 0; i < P_NUMBER; i++)
+//	{
+//#pragma HLS loop_tripcount min=10 max=30000		//指明循坏次数的最大值和最小值
+//#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
+//
+//		my_rand(&function_rand_number);
+//		rand_y[i] = rand_y_gather[function_rand_number % MATRIX_MAP_Y];
+//
+//	}
+//	for (i = 0; i < P_NUMBER; i++)
+//	{
+//#pragma HLS loop_tripcount min=10 max=30000		//指明循坏次数的最大值和最小值
+//#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
+//
+//		my_rand(&function_rand_number);
+//		rand_angle[i] = rand_angles_gather[function_rand_number % particle_angle_num];
+//	}
 
 }
 
@@ -453,6 +499,7 @@ void read_map_file(float world_data_x[MAX_LINE], float world_data_y[MAX_LINE])
 	}
 
 	//读取全局地图x,y坐标
+	i= 0;
 	while ((fgets(buf_x, LINE_DATA, fp_x) != NULL) && (fgets(buf_y, LINE_DATA, fp_y) != NULL))
 	{
 		world_data_x[i] = atof(buf_x);
@@ -492,7 +539,6 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 	for (i = 0; i < P_NUMBER; i++)
 	{
 #pragma HLS loop_tripcount min=100000 max=200000		//指明循坏次数的最大值和最小值
-		//#pragma HLS unroll factor=50
 #pragma HLS pipeline II=1
 		score[i] = 0;
 	}
@@ -526,12 +572,9 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 
 			//			#pragma HLS RESOURCE variable=occ_y core=Cmp
 			//			#pragma HLS RESOURCE variable=occ_x core=Cmp
-			if (occ_y < MATRIX_MAP_Y && occ_x < MATRIX_MAP_X && occ_x >= 0 && occ_y >= 0)
+			if (occ_y < MATRIX_MAP_Y && occ_x < MATRIX_MAP_X && occ_x >= 0 && occ_y >= 0 && World_map[occ_y][occ_x] == 1)
 			{
-				if (World_map[occ_y][occ_x] == 1)
-				{
-					score[i] = score[i] + 1;
-				}
+				score[i] = score[i] + 1;
 			}
 
 		}
@@ -547,9 +590,8 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 	for (i = 0; i < P_NUMBER; i++)
 	{
 #pragma HLS loop_tripcount min=100000 max=1000000		//指明循坏次数的最大值和最小值,没啥用
-		//		#pragma HLS unroll factor=50
 #pragma HLS pipeline II = 1					//此循环内执行流水线操作
-		//		#pragma HLS dependence variable=sum_score intra false		//由于sum_score的存在，需要给个提示
+//#pragma HLS dependence variable=sum_score intra false		//由于sum_score的存在，需要给个提示
 
 		sum_score = sum_score + score[i];
 		if (score[i] > max_score)
@@ -587,12 +629,6 @@ void MCL_process(float lidar_ranges[lidar_number], float lidar_angles[lidar_numb
 
 	*max_S = round(max_score * P_NUMBER / sum_score);
 
-//	my_rand(&function_rand_number);
-//	test_array[0] = function_rand_number;
-//	test_array[1] = function_rand_number % (2 * p_move_range);
-//	test_array[2] = ceil(-p_move_range + test_array[1]);
-//	test_array[3] = ceil(-p_move_range + test_array[1]);
-//	process_rand_num(&test_array[3], -p_move_range, p_move_range);
 
 	//计算匹配度，并与阈值比较
 	*Est_angle_pose = rand_angle_max;
@@ -612,8 +648,8 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 	//	#pragma HLS allocation instances=icmp limit=256 operation		//
 	//	#pragma HLS allocation instances=or limit=128 operation		//
 	//	#pragma HLS ALLOCATION instances=mul limit=200 operation
-#pragma HLS allocation instances=process_rand_num limit=10 function
-#pragma HLS allocation instances=my_rand limit=10 function
+//#pragma HLS allocation instances=process_rand_num limit=10 function
+//#pragma HLS allocation instances=my_rand limit=3 function
 
 	int P_num;								//P_num用于给所有粒子赋值的驱动变量
 	short rand_num_1, rand_num_2, rand_num_3, rand_num_temp;				//随机数，用于在随机数组里取数值
@@ -646,32 +682,10 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 		P_num = 0;
 	}
 
-
 	//如果连续thr次同样最大值，则重新随机撒粒子
 	if (sample_reprepare > 0)
 	{
-		//随机数给rand_x,y,angle赋值
-		for (i = 0; i < P_NUMBER; i++)
-		{
-#pragma HLS loop_tripcount min=10 max=2000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
-			my_rand(&function_rand_number);
-			rand_x[i] = rand_x_gather[function_rand_number % MATRIX_MAP_X];
-		}
-		for (i = 0; i < P_NUMBER; i++)
-		{
-#pragma HLS loop_tripcount min=10 max=2000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
-			my_rand(&function_rand_number);
-			rand_y[i] = rand_y_gather[function_rand_number % MATRIX_MAP_Y];
-		}
-		for (i = 0; i < P_NUMBER; i++)
-		{
-#pragma HLS loop_tripcount min=10 max=2000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
-			my_rand(&function_rand_number);
-			rand_angle[i] = rand_angles_gather[function_rand_number % particle_angle_num];
-		}
+		MCL_prepare(rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle, &function_rand_number);
 	}
 	else
 	{
@@ -751,7 +765,7 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 		for (k = k_start; k < P_NUMBER; k++)
 		{
 #pragma HLS loop_tripcount min=10 max=1000000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
+#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
 
 			my_rand(&function_rand_number);
 			rand_num_temp = (function_rand_number % (2 * p_move_range));
@@ -766,7 +780,7 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 		for (k = k_start; k < P_NUMBER; k++)
 		{
 #pragma HLS loop_tripcount min=10 max=1000000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
+#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
 
 			my_rand(&function_rand_number);
 			rand_num_temp = (function_rand_number % (2 * p_move_range));
@@ -781,7 +795,7 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 		for (k = k_start; k < P_NUMBER; k++)
 		{
 #pragma HLS loop_tripcount min=10 max=1000000		//指明循坏次数的最大值和最小值
-#pragma HLS pipeline II=40	 					//此循环内执行流水线操作
+#pragma HLS pipeline II=1	 					//此循环内执行流水线操作
 
 			my_rand(&function_rand_number);
 			rand_num_temp = (function_rand_number % (2 * p_move_range));
