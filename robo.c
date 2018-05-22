@@ -7,6 +7,8 @@
 
 #ifdef SDX_USE
 #include "sds_lib.h"
+#define TIME_STAMP_INIT  unsigned long clock_start, clock_end;  clock_start = sds_clock_counter();
+#define TIME_STAMP  { clock_end = sds_clock_counter(); printf("elapsed time %lu \n", clock_end-clock_start); clock_start = sds_clock_counter();  }
 #endif
 
 #define MAX_LINE 10538		//文件中一共16826行数据
@@ -17,7 +19,7 @@
 #define lidar_number  360		//原始激光雷达角度数据
 #define particle_angle_num  311		//粒子角度信息随机个数
 #define ang_func_angle_num 111960			//111960 = 311*360
-#define P_NUMBER  100000//粒子数
+#define P_NUMBER  1000000//粒子数
 #define P_PART  4//粒子数分割成几分份
 #define MATCH_THR 0.7			//匹配度阈值，360*MATCH_THR
 #define LIDAR_FILE_READ_LINE  10
@@ -204,6 +206,8 @@ int main()
 	int test_array[10] = { 0 };		//调试用数组
 
 	unsigned long my_rand_number_seed = 1;
+	unsigned long my_rand_number_seed_last;
+	unsigned long my_rand_number_seed_now;
 
 	//给rand_x_gather，rand_y_gather，rand_angles_gather赋值
 	for (i = 0; i < particle_angle_num; i++)
@@ -238,14 +242,22 @@ int main()
 	printf("go in prepare\n");
 
 	my_time(&my_rand_number_seed);		//将时间种子赋给my_rand_number_seed
+	printf("before prepare time seed is %ld\n", my_rand_number_seed);
+	my_rand_number_seed_last = my_rand_number_seed;
 	MCL_prepare(rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle, &my_rand_number_seed);
+	my_rand_number_seed_now = (unsigned long)(time(NULL));
+	printf("prepare time is %ld\n", my_rand_number_seed_now-my_rand_number_seed_last);
 
 	printf("go in while\n");
+	TIME_STAMP_INIT
 	while (run_MCL_fun)
 	{
+		TIME_STAMP
 		my_time(&my_rand_number_seed);		//将时间种子赋给my_rand_number_seed
-		printf("go in process\n");
+		my_rand_number_seed_last = my_rand_number_seed;
 		MCL_process(my_angle_cos, my_angle_sin, lidar_ranges, lidar_angles, World_map, rand_x, rand_y, rand_angle, score, &max_score_loop, split_number, &max_score_pos, &max_S, &Est_x_pose, &Est_y_pose, &Est_angle_pose, &Est_match_rate, test_array, &my_rand_number_seed);
+		my_rand_number_seed_now = (unsigned long)(time(NULL));
+		printf("MCL_process time is %ld\n", my_rand_number_seed_now-my_rand_number_seed_last);
 		printf("Estimate %d times pose are:  \n x = %d \n y = %d \n angle = %f\n match_rate = %f \n", loop_time, Est_x_pose, Est_y_pose, Est_angle_pose, Est_match_rate);
 		loop_time++;
 		//		printf("rand test_number is %d  %d  %d  %d\n", test_array[0], test_array[1], test_array[2], test_array[3]);
@@ -256,9 +268,10 @@ int main()
 		//如果匹配点最多没有到达阈值，则重采样
 		else
 		{
-			my_time(&my_rand_number_seed);		//将时间种子赋给my_rand_number_seed
-			printf("go in important sample\n");		//printf("rand time seed is %d\n", my_rand_number_seed);
+			my_rand_number_seed_last = (unsigned long)(time(NULL));
 			MCL_important_sample(&max_score_loop, split_number, &max_score_pos, &max_S, rand_angles_gather, rand_x_gather, rand_y_gather, rand_x, rand_y, rand_angle, &my_rand_number_seed);
+			my_rand_number_seed_now = (unsigned long)(time(NULL));
+			printf("MCL_important_sample time is %ld\n", my_rand_number_seed_now-my_rand_number_seed_last);
 		}
 	}
 
@@ -490,8 +503,8 @@ void MCL_process(float my_angle_cos[ang_func_angle_num], float my_angle_sin[ang_
 	//	#pragma HLS allocation instances=add limit=256 operation		//
 	//	#pragma HLS allocation instances=icmp limit=256 operation		//
 	//	#pragma HLS allocation instances=or limit=128 operation		//
-#pragma HLS allocation instances=ddiv limit=1 operation
-#pragma HLS allocation instances=dadd limit=1 operation
+//#pragma HLS allocation instances=ddiv limit=1 operation
+//#pragma HLS allocation instances=dadd limit=1 operation
 	float angle, range;			//临时变量，用于计算occ_x,occ_y
 	int occ_x, occ_y;			//局部地图以粒子位置为机器人位置，得到的x,y值，后续将判断地图上此点是否存在，存在则加1分
 	int rand_x_max;				////储存最大得分的位置信息
@@ -574,7 +587,7 @@ void MCL_process(float my_angle_cos[ang_func_angle_num], float my_angle_sin[ang_
 			process_temp_3 = my_sin_local[j] / map_resol;
 //		#pragma HLS RESOURCE variable=process_temp_4 core=MUL
 			process_temp_4 = range * process_temp_3;
-			occ_y = ceil(process_temp_4 + rand_x_store);
+			occ_y = ceil(process_temp_4 + rand_y_store);
 
 
 //			occ_x = ceil(range*my_cos_local[j] / map_resol + rand_x_store);
@@ -674,7 +687,7 @@ void MCL_important_sample(char *max_score_loop, short split_number[P_NUMBER], in
 	//	#pragma HLS allocation instances=icmp limit=256 operation		//
 	//	#pragma HLS allocation instances=or limit=128 operation		//
 	//	#pragma HLS ALLOCATION instances=mul limit=200 operation
-#pragma HLS ALLOCATION instances=urem limit=3 operation
+//#pragma HLS ALLOCATION instances=urem limit=1 operation
 
 	int P_num;								//P_num用于给所有粒子赋值的驱动变量
 	short rand_num_1, rand_num_2, rand_num_3, rand_num_temp_1, rand_num_temp_2, rand_num_temp_3, rand_num_temp_div;				//随机数，用于在随机数组里取数值
